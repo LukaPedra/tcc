@@ -88,3 +88,44 @@ class BlackjackAgent:
     def decay_epsilon(self):
         """Reduce exploration rate after each episode."""
         self.epsilon = max(self.final_epsilon, self.epsilon - self.epsilon_decay)
+
+class MonteCarloBlackjackAgent:
+    def __init__(
+        self,
+        env: gym.Env,
+        initial_epsilon: float,
+        epsilon_decay: float,
+        final_epsilon: float,
+        discount_factor: float = 1.0,
+    ):
+        self.env = env
+        self.q_values = defaultdict(lambda: np.zeros(env.action_space.n))
+        self.returns_sum = defaultdict(lambda: np.zeros(env.action_space.n))
+        self.returns_count = defaultdict(lambda: np.zeros(env.action_space.n))
+        self.epsilon = initial_epsilon
+        self.epsilon_decay = epsilon_decay
+        self.final_epsilon = final_epsilon
+        self.discount_factor = discount_factor
+
+    def get_action(self, obs: tuple[int, int, bool]) -> int:
+        if np.random.random() < self.epsilon:
+            return self.env.action_space.sample()
+        else:
+            return int(np.argmax(self.q_values[obs]))
+
+    def update_episode(self, episode):
+        # episode: list of (obs, action, reward)
+        G = 0
+        visited = set()
+        for obs, action, reward in reversed(episode):
+            G = self.discount_factor * G + reward
+            if (obs, action) not in visited:
+                self.returns_sum[obs][action] += G
+                self.returns_count[obs][action] += 1
+                self.q_values[obs][action] = (
+                    self.returns_sum[obs][action] / self.returns_count[obs][action]
+                )
+                visited.add((obs, action))
+
+    def decay_epsilon(self):
+        self.epsilon = max(self.final_epsilon, self.epsilon - self.epsilon_decay)
