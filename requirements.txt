@@ -1,11 +1,12 @@
-gymnasium
+gym==0.25.1
 matplotlib
 tqdm
 numpy==1.26.4
-torch
+torch>=2.0
 gym-super-mario-bros==7.4.0
 torchvision
 torchaudio
 tensordict
 torchrl
 opencv-python
+scikit-image
