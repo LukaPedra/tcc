@@ -41,3 +41,38 @@ class SkipFrame(gym.Wrapper):
             if done:
                 break
         return obs, total_reward, done, info
+# Add this to tutorial/util.py
+
+class StuckPenalty(gym.Wrapper):
+    def __init__(self, env, penalty=-2.0, threshold=60):
+        """
+        punishes the agent if x_pos doesn't change significantly
+        over a window of 'threshold' frames.
+        """
+        super().__init__(env)
+        self.penalty = penalty
+        self.threshold = threshold
+        self.x_history = []
+
+    def step(self, action):
+        state, reward, done, info = self.env.step(action)
+
+        # Get Mario's x position from the info dict
+        if 'x_pos' in info:
+            self.x_history.append(info['x_pos'])
+
+        # Maintain history size
+        if len(self.x_history) > self.threshold:
+            self.x_history.pop(0)
+
+            # Check variance in x_pos
+            # If the difference between the furthest left and right
+            # position in the last 60 frames is < 2 pixels, we are stuck.
+            if max(self.x_history) - min(self.x_history) < 2:
+                reward += self.penalty
+
+        return state, reward, done, info
+
+    def reset(self, **kwargs):
+        self.x_history = []
+        return self.env.reset(**kwargs)
