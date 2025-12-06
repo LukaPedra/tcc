@@ -13,137 +13,101 @@ class Mario:
         self.save_dir = save_dir
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Check for MPS (Apple Silicon) support if CUDA isn't available
         if self.device == "cpu" and torch.backends.mps.is_available():
             self.device = "mps"
 
+        # Mario's DNN to predict the most optimal action
         self.net = MarioNet(self.state_dim, self.action_dim).float()
         self.net = self.net.to(device=self.device)
 
+        # Exploration parameters
         self.exploration_rate = 1
         self.exploration_rate_decay = 0.99999975
         self.exploration_rate_min = 0.1
         self.curr_step = 0
 
-        self.save_every = 5e5
+        self.save_every = 5e5  # no. of experiences between saving Mario Net
 
-        # Memory
+        # Memory using TorchRL
+        # Note: LazyMemmapStorage stores data on disk/memory mapped, efficient for large buffers
         self.memory = TensorDictReplayBuffer(storage=LazyMemmapStorage(100000, device=torch.device("cpu")))
         self.batch_size = 32
 
+        # Learning parameters
         self.gamma = 0.9
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=0.00025)
         self.loss_fn = torch.nn.SmoothL1Loss()
 
+        # Burn-in: The number of steps to collect before training starts
+        # Set to 1e4 (10,000) as per the optimized code, vs 1e5 in your old code
         self.burnin = 1e4
-        self.learn_every = 3
-        self.sync_every = 1e4
+        self.learn_every = 3  # updates to Q_online every n steps
+        self.sync_every = 1e4  # sync Q_target every n steps
 
     def act(self, state):
         """
-        Given a state (or batch), choose an epsilon-greedy action.
+        Given a state, choose an epsilon-greedy action and update value of step.
         """
-        # Ensure state is tensor on device
-        if not isinstance(state, torch.Tensor):
-            state = torch.tensor(state, device=self.device)
-
-        is_batch = (state.ndim == 4)
-
         # EXPLORE
         if np.random.rand() < self.exploration_rate:
-            if is_batch:
-                action_idx = np.random.randint(self.action_dim, size=state.shape[0])
-            else:
-                action_idx = np.random.randint(self.action_dim)
+            action_idx = np.random.randint(self.action_dim)
+
         # EXPLOIT
         else:
-            if not is_batch:
-                state = state.unsqueeze(0)
-
-            # Cast to float and normalize here for the network
-            state = state.to(dtype=torch.float32).div(255.0)
-
+            state = state[0].__array__() if isinstance(state, tuple) else state.__array__()
+            state = torch.tensor(state, device=self.device).unsqueeze(0)
             action_values = self.net(state, model="online")
-            action_idx = torch.argmax(action_values, axis=1)
-            action_idx = action_idx.cpu().numpy()
+            action_idx = torch.argmax(action_values, axis=1).item()
 
-            if not is_batch:
-                action_idx = action_idx[0]
-
+        # decrease exploration_rate
         self.exploration_rate *= self.exploration_rate_decay
         self.exploration_rate = max(self.exploration_rate_min, self.exploration_rate)
-        self.curr_step += 1
 
+        # increment step
+        self.curr_step += 1
         return action_idx
 
     def cache(self, state, next_state, action, reward, done):
         """
         Store the experience to self.memory (replay buffer)
-        CRITICAL FIX: Enforce Float32/Uint8 to avoid MPS crashes.
         """
-        def to_tensor(x, dtype):
-            if isinstance(x, torch.Tensor):
-                t = x.cpu()
-            else:
-                t = torch.tensor(x)
-            # Enforce the specific dtype (MPS doesn't like Float64)
-            return t.to(dtype=dtype)
+        def first_if_tuple(x):
+            return x[0] if isinstance(x, tuple) else x
 
-        # 1. Images -> Uint8 (Saves RAM, MPS Safe)
-        state = to_tensor(state, torch.uint8)
-        next_state = to_tensor(next_state, torch.uint8)
+        state = first_if_tuple(state).__array__()
+        next_state = first_if_tuple(next_state).__array__()
 
-        # 2. Actions -> Long (Int64 is fine for MPS indices)
-        action = to_tensor(action, torch.long)
+        state = torch.tensor(state)
+        next_state = torch.tensor(next_state)
+        action = torch.tensor([action])
+        reward = torch.tensor([reward])
+        done = torch.tensor([done])
 
-        # 3. Rewards -> Float32 (CRITICAL FIX: Default was Float64 which crashes MPS)
-        reward = to_tensor(reward, torch.float32)
-
-        # 4. Done -> Bool
-        done = to_tensor(done, torch.bool)
-
-        if state.ndim == 4:
-            if action.ndim == 1: action = action.unsqueeze(1)
-            if reward.ndim == 1: reward = reward.unsqueeze(1)
-            if done.ndim == 1: done = done.unsqueeze(1)
-
-            td = TensorDict({
-                "state": state,
-                "next_state": next_state,
-                "action": action,
-                "reward": reward,
-                "done": done
-            }, batch_size=[state.shape[0]])
-
-            self.memory.extend(td)
-        else:
-            self.memory.add(TensorDict({
-                "state": state,
-                "next_state": next_state,
-                "action": action,
-                "reward": reward,
-                "done": done
-            }, batch_size=[]))
+        self.memory.add(TensorDict({
+            "state": state,
+            "next_state": next_state,
+            "action": action,
+            "reward": reward,
+            "done": done
+        }, batch_size=[]))
 
     def recall(self):
-        # Sample moves to device. Since we ensured Float32 in cache(), this won't crash now.
+        """
+        Retrieve a batch of experiences from memory
+        """
         batch = self.memory.sample(self.batch_size).to(self.device)
         state, next_state, action, reward, done = (batch.get(key) for key in ("state", "next_state", "action", "reward", "done"))
         return state, next_state, action.squeeze(), reward.squeeze(), done.squeeze()
 
     def td_estimate(self, state, action):
-        # Neural Net needs Float32 normalized 0-1
-        state = state.to(dtype=torch.float32).div(255.0)
-
         current_Q = self.net(state, model="online")[
             np.arange(0, self.batch_size), action
-        ]
+        ]  # Q_online(s,a)
         return current_Q
 
     @torch.no_grad()
     def td_target(self, reward, next_state, done):
-        # Neural Net needs Float32 normalized 0-1
-        next_state = next_state.to(dtype=torch.float32).div(255.0)
-
         next_state_Q = self.net(next_state, model="online")
         best_action = torch.argmax(next_state_Q, axis=1)
         next_Q = self.net(next_state, model="target")[
@@ -184,11 +148,16 @@ class Mario:
         if self.curr_step % self.learn_every != 0:
             return None, None
 
+        # Sample from memory
         state, next_state, action, reward, done = self.recall()
 
+        # Get TD Estimate
         td_est = self.td_estimate(state, action)
+
+        # Get TD Target
         td_tgt = self.td_target(reward, next_state, done)
 
+        # Backpropagate loss through Q_online
         loss = self.update_Q_online(td_est, td_tgt)
 
         return (td_est.mean().item(), loss)
