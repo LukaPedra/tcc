@@ -1,10 +1,8 @@
 import torch
 import numpy as np
-import random
-from pathlib import Path
 from tensordict import TensorDict
 from torchrl.data import TensorDictReplayBuffer, LazyMemmapStorage
-from neural import MarioNet
+from model import MarioNet
 
 class Mario:
     def __init__(self, state_dim, action_dim, save_dir):
@@ -12,12 +10,15 @@ class Mario:
         self.action_dim = action_dim
         self.save_dir = save_dir
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        # Check for MPS (Apple Silicon) support if CUDA isn't available
-        if self.device == "cpu" and torch.backends.mps.is_available():
+        # Device setup
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
             self.device = "mps"
+        else:
+            self.device = "cpu"
 
-        # Mario's DNN to predict the most optimal action
+        # Initialize Neural Network
         self.net = MarioNet(self.state_dim, self.action_dim).float()
         self.net = self.net.to(device=self.device)
 
@@ -27,10 +28,10 @@ class Mario:
         self.exploration_rate_min = 0.1
         self.curr_step = 0
 
-        self.save_every = 5e5  # no. of experiences between saving Mario Net
+        # Saving parameters
+        self.save_every = 5e5
 
-        # Memory using TorchRL
-        # Note: LazyMemmapStorage stores data on disk/memory mapped, efficient for large buffers
+        # Memory parameters
         self.memory = TensorDictReplayBuffer(storage=LazyMemmapStorage(100000, device=torch.device("cpu")))
         self.batch_size = 32
 
@@ -38,12 +39,9 @@ class Mario:
         self.gamma = 0.9
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=0.00025)
         self.loss_fn = torch.nn.SmoothL1Loss()
-
-        # Burn-in: The number of steps to collect before training starts
-        # Set to 1e4 (10,000) as per the optimized code, vs 1e5 in your old code
-        self.burnin = 1e4
-        self.learn_every = 3  # updates to Q_online every n steps
-        self.sync_every = 1e4  # sync Q_target every n steps
+        self.burnin = 1e4  # min. experiences before training
+        self.learn_every = 3  # no. of experiences between updates to Q_online
+        self.sync_every = 1e4  # no. of experiences between Q_target & Q_online sync
 
     def act(self, state):
         """
@@ -84,13 +82,7 @@ class Mario:
         reward = torch.tensor([reward])
         done = torch.tensor([done])
 
-        self.memory.add(TensorDict({
-            "state": state,
-            "next_state": next_state,
-            "action": action,
-            "reward": reward,
-            "done": done
-        }, batch_size=[]))
+        self.memory.add(TensorDict({"state": state, "next_state": next_state, "action": action, "reward": reward, "done": done}, batch_size=[]))
 
     def recall(self):
         """

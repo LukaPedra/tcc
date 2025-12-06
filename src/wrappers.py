@@ -1,7 +1,8 @@
 import gym
+from gym.spaces import Box
+from gym.wrappers import FrameStack
 import numpy as np
 import torch
-from gym.spaces import Box
 from torchvision import transforms as T
 
 class SkipFrame(gym.Wrapper):
@@ -21,7 +22,6 @@ class SkipFrame(gym.Wrapper):
                 break
         return obs, total_reward, done, trunk, info
 
-
 class GrayScaleObservation(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -39,7 +39,6 @@ class GrayScaleObservation(gym.ObservationWrapper):
         transform = T.Grayscale()
         observation = transform(observation)
         return observation
-
 
 class ResizeObservation(gym.ObservationWrapper):
     def __init__(self, env, shape):

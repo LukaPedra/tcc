@@ -3,7 +3,8 @@ from torch import nn
 import copy
 
 class MarioNet(nn.Module):
-    """mini CNN structure
+    """
+    Mini CNN structure
     input -> (conv2d + relu) x 3 -> flatten -> (dense + relu) x 2 -> output
     """
 
@@ -18,6 +19,7 @@ class MarioNet(nn.Module):
 
         self.online = self.__build_cnn(c, output_dim)
 
+        # Target network is a copy of the online network
         self.target = self.__build_cnn(c, output_dim)
         self.target.load_state_dict(self.online.state_dict())
 
