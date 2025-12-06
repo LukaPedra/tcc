@@ -25,7 +25,7 @@ class Mario:
 
         self.curr_step = 0
 
-        # OPTIMIZATION: Detect specific device (CUDA vs MPS vs CPU)
+        # Device Detection
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
             print("Using CUDA device")
@@ -47,19 +47,35 @@ class Mario:
 
     def act(self, state):
         """
-        Given a state, choose an epsilon-greedy action and update value of step.
+        Given a state (or batch of states), choose an epsilon-greedy action.
         """
+        # Ensure state is a numpy array (handles LazyFrames from Gym)
+        state_np = np.array(state)
+
         # EXPLORE
         if np.random.rand() < self.exploration_rate:
-            action_idx = np.random.randint(self.action_dim)
+            # If state is batched (4 dims: Batch, C, H, W), return random actions for EACH env
+            if state_np.ndim == 4:
+                action_idx = np.random.randint(self.action_dim, size=state_np.shape[0])
+            else:
+                action_idx = np.random.randint(self.action_dim)
 
         # EXPLOIT
         else:
-            # FIX 1: Convert LazyFrames to numpy array to silence warning
-            # FIX 2: Ensure float32 for MPS compatibility
-            state = torch.tensor(np.array(state), dtype=torch.float32).unsqueeze(0).to(self.device)
+            state = torch.tensor(state_np, dtype=torch.float32).to(self.device)
+
+            # Add batch dimension if single input
+            if state.ndim == 3:
+                state = state.unsqueeze(0)
+
             action_values = self.net(state, model='online')
-            action_idx = torch.argmax(action_values, axis=1).item()
+            action_idx = torch.argmax(action_values, axis=1)
+
+            action_idx = action_idx.cpu().numpy()
+
+            # If input was single (ndim=3), return single int
+            if state_np.ndim == 3:
+                action_idx = action_idx[0]
 
         # decrease exploration_rate
         self.exploration_rate *= self.exploration_rate_decay
@@ -70,23 +86,33 @@ class Mario:
 
     def cache(self, state, next_state, action, reward, done):
         """
-        Store the experience to self.memory (replay buffer)
+        Store the experience to self.memory (replay buffer).
+        Handles both single values and batches.
         """
-        # FIX 1: Convert LazyFrames to numpy array
-        # FIX 2: Use FloatTensor (float32) instead of DoubleTensor (float64) for MPS
-        state = torch.tensor(np.array(state), dtype=torch.float32).to(self.device)
-        next_state = torch.tensor(np.array(next_state), dtype=torch.float32).to(self.device)
+        state = np.array(state)
+        next_state = np.array(next_state)
 
-        action = torch.tensor([action], dtype=torch.long).to(self.device)
-        reward = torch.tensor([reward], dtype=torch.float32).to(self.device) # Fixed crash here
-        done = torch.tensor([done], dtype=torch.bool).to(self.device)
-
-        self.memory.append( (state, next_state, action, reward, done,) )
+        # Check if input is a batch (Vector Env)
+        if state.ndim == 4:
+            num_envs = state.shape[0]
+            # Loop through the batch and save each experience individually
+            for i in range(num_envs):
+                s = torch.tensor(state[i], dtype=torch.float32).to(self.device)
+                ns = torch.tensor(next_state[i], dtype=torch.float32).to(self.device)
+                a = torch.tensor([action[i]], dtype=torch.long).to(self.device)
+                r = torch.tensor([reward[i]], dtype=torch.float32).to(self.device)
+                d = torch.tensor([done[i]], dtype=torch.bool).to(self.device)
+                self.memory.append((s, ns, a, r, d))
+        else:
+            # Single env case
+            s = torch.tensor(state, dtype=torch.float32).to(self.device)
+            ns = torch.tensor(next_state, dtype=torch.float32).to(self.device)
+            a = torch.tensor([action], dtype=torch.long).to(self.device)
+            r = torch.tensor([reward], dtype=torch.float32).to(self.device)
+            d = torch.tensor([done], dtype=torch.bool).to(self.device)
+            self.memory.append((s, ns, a, r, d))
 
     def recall(self):
-        """
-        Retrieve a batch of experiences from memory
-        """
         batch = random.sample(self.memory, self.batch_size)
         state, next_state, action, reward, done = map(torch.stack, zip(*batch))
         return state, next_state, action.squeeze(), reward.squeeze(), done.squeeze()

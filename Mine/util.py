@@ -1,9 +1,7 @@
 import gym
-import torch
-import random, datetime, numpy as np
-from skimage import transform
-
+import numpy as np
 from gym.spaces import Box
+from skimage import transform
 
 class ResizeObservation(gym.ObservationWrapper):
     def __init__(self, env, shape):
@@ -18,7 +16,6 @@ class ResizeObservation(gym.ObservationWrapper):
 
     def observation(self, observation):
         resize_obs = transform.resize(observation, self.shape)
-        # cast float back to uint8
         resize_obs *= 255
         resize_obs = resize_obs.astype(np.uint8)
         return resize_obs
@@ -26,25 +23,22 @@ class ResizeObservation(gym.ObservationWrapper):
 
 class SkipFrame(gym.Wrapper):
     def __init__(self, env, skip):
-        """Return only every `skip`-th frame"""
         super().__init__(env)
         self._skip = skip
 
     def step(self, action):
-        """Repeat action, and sum reward"""
         total_reward = 0.0
         done = False
         for i in range(self._skip):
-            # Accumulate reward and repeat the same action
             obs, reward, done, info = self.env.step(action)
             total_reward += reward
             if done:
                 break
         return obs, total_reward, done, info
-# Add this to tutorial/util.py
+
 
 class StuckPenalty(gym.Wrapper):
-    def __init__(self, env, penalty=-2.0, threshold=60):
+    def __init__(self, env, penalty=-2.0, threshold=60, terminal_on_stuck=True):
         """
         punishes the agent if x_pos doesn't change significantly
         over a window of 'threshold' frames.
@@ -52,24 +46,25 @@ class StuckPenalty(gym.Wrapper):
         super().__init__(env)
         self.penalty = penalty
         self.threshold = threshold
+        self.terminal_on_stuck = terminal_on_stuck # <--- THIS IS YOUR LOW CAP
         self.x_history = []
 
     def step(self, action):
         state, reward, done, info = self.env.step(action)
 
-        # Get Mario's x position from the info dict
         if 'x_pos' in info:
             self.x_history.append(info['x_pos'])
 
-        # Maintain history size
         if len(self.x_history) > self.threshold:
             self.x_history.pop(0)
 
-            # Check variance in x_pos
-            # If the difference between the furthest left and right
-            # position in the last 60 frames is < 2 pixels, we are stuck.
+            # If we haven't moved 2 pixels in the last 60 frames
             if max(self.x_history) - min(self.x_history) < 2:
                 reward += self.penalty
+
+                # KILL THE EPISODE IMMEDIATELY
+                if self.terminal_on_stuck:
+                    done = True
 
         return state, reward, done, info
 

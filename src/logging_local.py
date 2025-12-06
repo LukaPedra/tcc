@@ -22,13 +22,13 @@ class MetricLogger:
         self.ep_avg_losses = []
         self.ep_avg_qs = []
 
-        # Moving averages, added for every call to record()
+        # Moving averages
         self.moving_avg_ep_rewards = []
         self.moving_avg_ep_lengths = []
         self.moving_avg_ep_avg_losses = []
         self.moving_avg_ep_avg_qs = []
 
-        # Current episode metric
+        # Current episode metric (for single-env mode)
         self.init_episode()
 
         # Timing
@@ -56,6 +56,14 @@ class MetricLogger:
         self.ep_avg_qs.append(ep_avg_q)
 
         self.init_episode()
+
+    # --- NEW METHOD FOR VECTOR ENV ---
+    def log_episode_manual(self, reward, length, loss, q):
+        """Manually log a completed episode from the vector loop"""
+        self.ep_rewards.append(reward)
+        self.ep_lengths.append(length)
+        self.ep_avg_losses.append(loss)
+        self.ep_avg_qs.append(q)
 
     def init_episode(self):
         self.curr_ep_reward = 0.0
