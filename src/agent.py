@@ -24,7 +24,7 @@ class Mario:
 
         # Exploration parameters
         self.exploration_rate = 1
-        self.exploration_rate_decay = 0.99999975
+        self.exploration_rate_decay = 0.99999
         self.exploration_rate_min = 0.1
         self.curr_step = 0
 
@@ -33,10 +33,10 @@ class Mario:
 
         # Memory parameters
         self.memory = TensorDictReplayBuffer(storage=LazyMemmapStorage(100000, device=torch.device("cpu")))
-        self.batch_size = 32
+        self.batch_size = 64
 
         # Learning parameters
-        self.gamma = 0.9
+        self.gamma = 0.8
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=0.00025)
         self.loss_fn = torch.nn.SmoothL1Loss()
         self.burnin = 1e4  # min. experiences before training

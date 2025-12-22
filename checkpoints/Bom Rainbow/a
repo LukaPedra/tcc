@@ -1,0 +1,14 @@
+- Rodar a mesma janela para os 5 algoritmos diferentes e salvar os gráficos
+- Comparar os resultados e criar tabelas com tempos, médias, e outros dados estatísticos (verificar melhores métricas)
+- O texto deve conter as seguintes seções:
+
+- Resumo
+- Introdução (dar uma contextualização no problema)
+- Trabalhos Relacionados (extremamente importante)
+- Base Teórica (explicar cada algoritmo)
+- Objetivo e Metodologia (explicar o objetivo do projeto e qual foi a metodologia de execução e comparação entre algoritmos) -> aqui, como você não está criando um sistema, acho que não tem necessidade de escrever os requisitos funcionais e não-funcionais, mas sim criar uma ou mais hipóteses, já que estamos focando em um projeto de pesquisa.
+- Idealmente adicionar um UML do projeto, de como ele esta estruturado e quais módulos ele está utilizando, ou pelo menos um diagrama mostrando como o processo de raciocínio da IA funciona (como se explicasse visualmente)
+- Portanto na seção de Metodologia também será explicado como o projeto foi implementado, usando o gym + pytorch
+- Resultados
+- Conclusão
+- Bibliografia/Referências

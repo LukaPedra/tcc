@@ -162,6 +162,7 @@ def main():
 
     try:
         while True:
+            env.render()
             # Run agent on the batch of states
             action = agent.act(state)
 

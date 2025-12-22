@@ -1,5 +1,6 @@
 import random, datetime
 from pathlib import Path
+from time import sleep
 
 import gym
 import gym_super_mario_bros
@@ -44,7 +45,6 @@ for e in range(episodes):
     while True:
 
         env.render()
-
         action = mario.act(state)
 
         next_state, reward, done, info = env.step(action)
@@ -54,9 +54,10 @@ for e in range(episodes):
         logger.log_step(reward, None, None)
 
         state = next_state
-
+        sleep(0.05)
         if done or info['flag_get']:
             break
+
 
     logger.log_episode()
 
